@@ -73,10 +73,10 @@ To use the PyTorch backend, pass a torch tensor:
 ```python
 import torch
 
-tensor = torch.from_numpy(arr)       # CPU
+tensor = torch.from_numpy(arr)# CPU
 count_classes(tensor)
 
-tensor = tensor.to("cuda")           # GPU — counting happens on-device
+tensor = tensor.to("cuda")# GPU — counting happens on-device
 count_classes(tensor)
 ```
 
