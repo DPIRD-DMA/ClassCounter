@@ -1,0 +1,67 @@
+[project]
+name = "classcounter"
+version = "0.1.0"
+description = "Fast class counting for numpy arrays, torch tensors, and GeoTIFFs"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Nick Wright", email = "nicholas.wright@dpird.wa.gov.au" }]
+keywords = ["numpy", "torch", "geotiff", "raster", "classification", "bincount"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/DPIRD-DMA/ClassCounter"
+Repository = "https://github.com/DPIRD-DMA/ClassCounter"
+Issues = "https://github.com/DPIRD-DMA/ClassCounter/issues"
+
+[project.optional-dependencies]
+torch = ["torch>=2.0"]
+geo = ["rasterio>=1.3"]
+numba = ["numba>=0.57"]
+all = ["torch>=2.0", "rasterio>=1.3", "numba>=0.57"]
+test = ["pytest>=8.0", "pytest-cov>=6.0"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.2",
+    "torch>=2.0",
+    "rasterio>=1.3",
+    "numba>=0.60",
+    "jupyter>=1.1.1",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "matplotlib>=3.10.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "torch: tests requiring PyTorch",
+    "numba: tests requiring numba",
+    "geo: tests requiring rasterio",
+    "slow: tests with large arrays or long runtime",
+]
+addopts = "-v --strict-markers --tb=short"
