@@ -89,3 +89,144 @@ class TestRasterLoading:
         names = {0: "water", 1: "forest", 2: "urban"}
         result = count_classes(str(tiny_geotiff), names=names)
         assert result == {"water": 2, "forest": 2, "urban": 2}
+
+
+class TestSaveCountsToRaster:
+
+    def test_saves_tags(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        counts = {0: 2, 1: 2, 2: 2}
+        save_counts_to_raster(tiny_geotiff, counts)
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["CLASS_COUNT_0"] == "2"
+        assert tags["CLASS_COUNT_1"] == "2"
+        assert tags["CLASS_COUNT_2"] == "2"
+
+    def test_saves_named_keys(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        counts = {"water": 2, "forest": 2, "urban": 2}
+        save_counts_to_raster(tiny_geotiff, counts)
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["CLASS_COUNT_water"] == "2"
+        assert tags["CLASS_COUNT_forest"] == "2"
+        assert tags["CLASS_COUNT_urban"] == "2"
+
+    def test_clears_stale_tags(self, tiny_geotiff):
+        """Old CLASS_COUNT_ tags are removed when writing new counts."""
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        save_counts_to_raster(tiny_geotiff, {0: 10, 1: 20, 99: 5})
+        save_counts_to_raster(tiny_geotiff, {0: 2, 1: 2})
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["CLASS_COUNT_0"] == "2"
+        assert tags["CLASS_COUNT_1"] == "2"
+        assert "CLASS_COUNT_99" not in tags
+
+    def test_preserves_raster_data(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        with rasterio.open(tiny_geotiff) as src:
+            original_data = src.read()
+
+        save_counts_to_raster(tiny_geotiff, {0: 2, 1: 2, 2: 2})
+
+        with rasterio.open(tiny_geotiff) as src:
+            after_data = src.read()
+        np.testing.assert_array_equal(original_data, after_data)
+
+    def test_file_not_found(self, tmp_path):
+        from classcounter import save_counts_to_raster
+
+        with pytest.raises(FileNotFoundError):
+            save_counts_to_raster(tmp_path / "nonexistent.tif", {0: 1})
+
+    def test_count_classes_save_metadata(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import count_classes
+
+        result = count_classes(str(tiny_geotiff), save_metadata=True)
+        assert result == {0: 2, 1: 2, 2: 2}
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["CLASS_COUNT_0"] == "2"
+        assert tags["CLASS_COUNT_1"] == "2"
+        assert tags["CLASS_COUNT_2"] == "2"
+
+    def test_save_metadata_with_non_path_raises(self):
+        from classcounter import count_classes
+
+        with pytest.raises(ValueError, match="save_metadata=True requires data to be a file path"):
+            count_classes(np.array([0, 1, 2]), save_metadata=True)
+
+    def test_custom_prefix(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        save_counts_to_raster(tiny_geotiff, {0: 2, 1: 2, 2: 2}, prefix="LAND_")
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["LAND_0"] == "2"
+        assert tags["LAND_1"] == "2"
+        assert tags["LAND_2"] == "2"
+
+    def test_custom_prefix_clears_only_matching(self, tiny_geotiff):
+        """Custom prefix only clears tags with that same prefix."""
+        import rasterio
+
+        from classcounter import save_counts_to_raster
+
+        save_counts_to_raster(tiny_geotiff, {0: 10}, prefix="LAND_")
+        save_counts_to_raster(tiny_geotiff, {0: 2}, prefix="OTHER_")
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert tags["LAND_0"] == "10"
+        assert tags["OTHER_0"] == "2"
+
+    def test_percent_auto_prefix(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import count_classes
+
+        count_classes(str(tiny_geotiff), percent=True, save_metadata=True)
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert "CLASS_PERCENT_0" in tags
+        assert "CLASS_PERCENT_1" in tags
+        assert "CLASS_PERCENT_2" in tags
+        assert "CLASS_COUNT_0" not in tags
+
+    def test_metadata_prefix_overrides_auto(self, tiny_geotiff):
+        import rasterio
+
+        from classcounter import count_classes
+
+        count_classes(
+            str(tiny_geotiff), percent=True, save_metadata=True, metadata_prefix="MY_"
+        )
+
+        with rasterio.open(tiny_geotiff) as src:
+            tags = src.tags()
+        assert "MY_0" in tags
+        assert "CLASS_PERCENT_0" not in tags

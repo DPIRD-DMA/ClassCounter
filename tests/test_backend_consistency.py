@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
+
+from tests.conftest import skip_no_numba, skip_no_torch
+
+pytestmark = [pytest.mark.torch, pytest.mark.numba, skip_no_torch, skip_no_numba]
 
 from classcounter.core import _count_numba, _count_numpy, _count_torch
 
 
 def _run_all_backends(data: np.ndarray) -> list[dict]:
     """Run the same data through numpy, torch, and numba backends."""
+    import torch
+
     tensor = torch.from_numpy(data)
     return [
         _count_numpy(data),
