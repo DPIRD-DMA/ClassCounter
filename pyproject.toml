@@ -29,8 +29,8 @@ Issues = "https://github.com/DPIRD-DMA/ClassCounter/issues"
 [project.optional-dependencies]
 torch = ["torch>=2.0"]
 geo = ["rasterio>=1.3"]
-numba = ["numba>=0.57"]
-all = ["torch>=2.0", "rasterio>=1.3", "numba>=0.57"]
+numba = ["numba>=0.60"]
+all = ["torch>=2.0", "rasterio>=1.3", "numba>=0.60"]
 test = ["pytest>=8.0", "pytest-cov>=6.0"]
 
 [dependency-groups]
@@ -65,3 +65,11 @@ markers = [
     "slow: tests with large arrays or long runtime",
 ]
 addopts = "-v --strict-markers --tb=short"
+
+[tool.coverage.run]
+source = ["classcounter"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 85
+precision = 2
