@@ -1,3 +1,7 @@
+[![PyPI Version](https://img.shields.io/pypi/v/classcounter)](https://pypi.org/project/classcounter/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/classcounter)](https://pypi.org/project/classcounter/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 # ClassCounter
 
 Fast class counting for NumPy arrays, PyTorch tensors, and GeoTIFFs.
@@ -49,6 +53,36 @@ count_classes("land_cover.tif")
 
 Requires the `geo` extra.
 
+### Saving results to GeoTIFF metadata
+
+Write class counts back into the raster's GDAL metadata tags:
+
+```python
+# One-liner: count and save in one step
+count_classes("land_cover.tif", save_metadata=True)
+# Writes tags: CLASS_COUNT_0=2017, CLASS_COUNT_1=1960, ...
+
+# With percentages — automatically uses CLASS_PERCENT_ prefix
+count_classes("land_cover.tif", percent=True, save_metadata=True)
+# Writes tags: CLASS_PERCENT_0=20.17, CLASS_PERCENT_1=19.6, ...
+
+# Custom prefix
+count_classes("land_cover.tif", save_metadata=True, metadata_prefix="LAND_")
+# Writes tags: LAND_0=2017, LAND_1=1960, ...
+```
+
+Or use the standalone function for more control:
+
+```python
+from classcounter import save_counts_to_raster
+
+counts = count_classes("land_cover.tif", names={0: "water", 1: "forest"})
+save_counts_to_raster("land_cover.tif", counts)
+# Writes tags: CLASS_COUNT_water=2017, CLASS_COUNT_forest=1960
+```
+
+Stale tags from previous runs are automatically cleared before writing.
+
 ### PyTorch tensors
 
 ```python
@@ -56,9 +90,10 @@ import torch
 
 tensor = torch.randint(0, 5, (100, 100))
 count_classes(tensor)
-```
 
-CUDA tensors are supported — counting happens on-device.
+tensor = tensor.to("cuda")  # GPU — counting happens on-device
+count_classes(tensor)
+```
 
 ### Backend selection
 
@@ -68,48 +103,57 @@ The backend is chosen automatically based on the input type:
 - **PyTorch tensors** → PyTorch (runs on-device, including CUDA)
 - **File paths** → loaded via rasterio, then counted with Numba/NumPy
 
-To use the PyTorch backend, pass a torch tensor:
-
-```python
-import torch
-
-tensor = torch.from_numpy(arr)# CPU
-count_classes(tensor)
-
-tensor = tensor.to("cuda")# GPU — counting happens on-device
-count_classes(tensor)
-```
-
 ## API
 
-### `count_classes(data, names=None, percent=False)`
+### `count_classes(data, names=None, percent=False, save_metadata=False, metadata_prefix=None)`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `data` | `ndarray`, `Tensor`, `str`, or `Path` | Input array, tensor, or path to a raster file |
 | `names` | `dict[int, str]` or `None` | Optional mapping of class IDs to human-readable names |
 | `percent` | `bool` | Return percentages (0–100) instead of raw counts. Default `False` |
+| `save_metadata` | `bool` | Write results as GDAL tags in the source GeoTIFF. Only valid when `data` is a file path. Default `False` |
+| `metadata_prefix` | `str` or `None` | Custom tag prefix. Defaults to `CLASS_COUNT_` or `CLASS_PERCENT_` (when `percent=True`) |
 
 **Returns:** `dict[int | str, int]` mapping class values (or names) to counts, or `dict[int | str, float]` when `percent=True`.
 
 When `names` is provided, classes present in the data but missing from the mapping use their integer key (with a warning). Classes in the mapping but absent from the data receive a count of 0.
 
+### `save_counts_to_raster(path, counts, *, prefix=None)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | `str` or `Path` | Path to an existing GeoTIFF file |
+| `counts` | `dict` | Dict of class counts as returned by `count_classes` |
+| `prefix` | `str` or `None` | Tag name prefix. Defaults to `CLASS_COUNT_` |
+
+Writes each entry as a GDAL metadata tag (e.g. `CLASS_COUNT_0=1234`). Existing tags matching the prefix are cleared before writing.
+
 ## Performance
 
-Benchmarks on an Ryzen 9 5950X and RTX 4090 with 100M-element arrays:
+Benchmarks on a Ryzen 9 5950X with RTX 4090, 100M-element arrays:
 
 | Backend       | Time (ms) |
 |---------------|-----------|
-| NumPy         | 176     |
-| Numba         | 12      |
-| PyTorch CPU   | 37      |
+| NumPy         | 178     |
+| Numba         | 17      |
+| PyTorch CPU   | 38      |
 | PyTorch GPU   | 2       |
 
 ![Backend comparison](https://raw.githubusercontent.com/DPIRD-DMA/ClassCounter/main/images/Backend%20comparison.png)
 
-Run the included [benchmark notebook](https://github.com/DPIRD-DMA/ClassCounter/blob/main/Benchmark%20backends.ipynb) to compare backends on your hardware.
+Run the included [benchmark notebook](https://github.com/DPIRD-DMA/ClassCounter/blob/main/benchmark_backends.ipynb) to compare backends on your hardware.
 
 See [Examples.ipynb](https://github.com/DPIRD-DMA/ClassCounter/blob/main/Examples.ipynb) for a walkthrough of all features including name mapping, percentages, PyTorch tensors, and GPU acceleration.
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Run tests: `uv run pytest`
+4. Submit a pull request
 
 ## License
 
