@@ -12,12 +12,15 @@ _has_numba_cached: bool | None = None
 
 
 def _is_nonneg_int(flat: np.ndarray) -> bool:
-    """Check if a flat array is non-negative integer (skips min() for unsigned dtypes)."""
+    """Check if a flat array is non-negative integer (skips min() for unsigned dtypes).
+
+    Precondition: flat.size > 0.
+    """
     if not np.issubdtype(flat.dtype, np.integer):
         return False
     if np.issubdtype(flat.dtype, np.unsignedinteger):
         return True
-    return flat.min() >= 0
+    return flat.size > 0 and flat.min() >= 0
 
 
 def _count_bool(flat: np.ndarray) -> dict[int, int]:
@@ -49,17 +52,45 @@ def count_classes(
     data: str | Path | np.ndarray | Any,
     names: dict[int, str] | None = None,
     percent: bool = False,
+    save_metadata: bool = False,
+    metadata_prefix: str | None = None,
 ) -> dict[int | str, int] | dict[int | str, float]:
     """Count occurrences of each unique class value.
+
+    Automatically selects the optimal backend (NumPy, Numba, or PyTorch)
+    based on input type.
 
     Args:
         data: A numpy array, torch tensor, or path to a raster file (GeoTIFF).
         names: Optional mapping of integer class values to string names.
-            When provided, returned dict keys are the mapped names.
+            When provided, returned dict keys are the mapped names. Classes in
+            the mapping but absent from the data receive a count of 0.
         percent: If True, return percentages (0-100) instead of raw counts.
+            Values are rounded to 2 decimal places.
+        save_metadata: If True, write the results as GDAL metadata tags in the
+            source GeoTIFF. Only valid when *data* is a file path.
+        metadata_prefix: Custom prefix for metadata tag names. When *None*,
+            defaults to ``CLASS_COUNT_`` for raw counts or ``CLASS_PERCENT_``
+            when *percent* is True.
 
     Returns:
         Dict mapping class values (or names) to their counts or percentages.
+
+    Raises:
+        TypeError: If data is not an ndarray, Tensor, str, or Path.
+        ImportError: If a torch tensor is given but torch is not installed,
+            or a file path is given but rasterio is not installed.
+
+    Examples:
+        >>> import numpy as np
+        >>> count_classes(np.array([0, 0, 1, 1, 1, 2]))
+        {0: 2, 1: 3, 2: 1}
+
+        >>> count_classes(np.array([0, 0, 1]), names={0: "a", 1: "b"})
+        {'a': 2, 'b': 1}
+
+        >>> count_classes(np.array([0, 0, 1, 1, 1, 2]), percent=True)
+        {0: 33.33, 1: 50.0, 2: 16.67}
     """
     arr, use_torch = _resolve_input(data)
 
@@ -89,6 +120,14 @@ def count_classes(
         total = sum(result.values())
         if total > 0:
             result = {k: round(v / total * 100, 2) for k, v in result.items()}
+
+    if save_metadata:
+        if not isinstance(data, str | Path):
+            msg = "save_metadata=True requires data to be a file path, not an array or tensor."
+            raise ValueError(msg)
+        if metadata_prefix is None:
+            metadata_prefix = "CLASS_PERCENT_" if percent else "CLASS_COUNT_"
+        save_counts_to_raster(data, result, prefix=metadata_prefix)
 
     return result
 
@@ -167,6 +206,53 @@ def _count_numba(arr: np.ndarray) -> dict[int, int]:
         return dict(zip(nonzero.tolist(), bin_counts[nonzero].tolist(), strict=True))
     values, counts = np.unique(flat, return_counts=True)
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
+
+
+def save_counts_to_raster(
+    path: str | Path,
+    counts: dict[int | str, int] | dict[int | str, float],
+    *,
+    prefix: str | None = None,
+) -> None:
+    """Save class counts as GDAL metadata tags in a GeoTIFF file.
+
+    Each entry is written as a tag named ``{prefix}{key}`` with the
+    count (or percentage) as the value. Existing tags matching the prefix
+    are cleared before writing so stale entries don't persist.
+
+    Args:
+        path: Path to an existing GeoTIFF file.
+        counts: Dict of class counts as returned by :func:`count_classes`.
+        prefix: Tag name prefix. Defaults to ``CLASS_COUNT_`` for raw counts
+            or ``CLASS_PERCENT_`` for percentage values (auto-detected from
+            the ``count_classes`` convenience parameter).
+
+    Raises:
+        ImportError: If rasterio is not installed.
+        FileNotFoundError: If *path* does not exist.
+    """
+    if prefix is None:
+        prefix = "CLASS_COUNT_"
+
+    try:
+        import rasterio
+    except ImportError:
+        msg = (
+            "rasterio is required to write raster metadata. "
+            "Install with: pip install classcounter[geo]"
+        )
+        raise ImportError(msg) from None
+
+    path = Path(path)
+    if not path.exists():
+        msg = f"File not found: {path}"
+        raise FileNotFoundError(msg)
+
+    with rasterio.open(path, "r+") as dst:
+        existing = dst.tags()
+        merged = {k: "" for k in existing if k.startswith(prefix)}
+        merged.update({f"{prefix}{k}": str(v) for k, v in counts.items()})
+        dst.update_tags(**merged)
 
 
 def _load_raster(path: Path) -> np.ndarray:
