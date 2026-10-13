@@ -71,3 +71,14 @@ class TestTorchBackend:
         result = count_classes(tensor)
         for v in result.values():
             assert isinstance(v, int)
+
+    def test_uint64_values_above_int64_max(self, torch_module):
+        from classcounter.core import _count_torch
+
+        big = 2**63 + 5
+        tensor = torch_module.tensor([1, big, big], dtype=torch_module.uint64)
+        devices = ["cpu"] + (["cuda"] if torch_module.cuda.is_available() else [])
+        for dev in devices:
+            assert _count_torch(tensor.to(dev)) == {1: 1, big: 2}
+            mask = torch_module.tensor([False, True, True], device=dev)
+            assert _count_torch(tensor.to(dev), mask) == {big: 2}

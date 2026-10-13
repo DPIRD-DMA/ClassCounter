@@ -45,6 +45,17 @@ count_classes(arr, percent=True)
 
 Input arrays can be any shape — they are flattened internally. Negative integers and floats are supported via a `np.unique` fallback path.
 
+### Counting only some elements
+
+Pass a boolean `mask` to count only the elements where it is `True`, e.g. only valid (non-nodata) pixels:
+
+```python
+count_classes(pred, mask=valid)
+count_classes(pred, mask=valid, percent=True)  # percentages of the valid pixels
+```
+
+The mask must have the same shape as the data or be broadcastable to it. A `(rows, cols)` mask covers every band of a `(bands, rows, cols)` raster. This gives the same result as `count_classes(pred[valid])` without copying the selected elements. On GPU tensors it also avoids the host sync that boolean indexing forces.
+
 ### GeoTIFF files
 
 ```python
@@ -97,15 +108,19 @@ count_classes(tensor)
 
 ### Backend selection
 
-The backend is chosen automatically based on the input type:
+By default (`backend="auto"`) the backend is chosen based on the input type:
 
 - **NumPy arrays** → Numba (if installed), otherwise NumPy
 - **PyTorch tensors** → PyTorch (runs on-device, including CUDA)
 - **File paths** → loaded via rasterio, then counted with Numba/NumPy
 
+Pass `backend="numpy"`, `"numba"` or `"torch"` to force one, so behaviour doesn't depend on what else is installed. An error is raised if that backend isn't installed or doesn't accept the input (`"torch"` takes tensors; `"numpy"` and `"numba"` take arrays and file paths).
+
+Numba compiles its kernels on first use and caches them on disk (in `__pycache__` next to the package, or in `NUMBA_CACHE_DIR` if set), so only the first process pays the compile cost. If the package directory isn't writable, set `NUMBA_CACHE_DIR` to a writable location.
+
 ## API
 
-### `count_classes(data, names=None, percent=False, save_metadata=False, metadata_prefix=None)`
+### `count_classes(data, names=None, percent=False, save_metadata=False, metadata_prefix=None, mask=None, backend="auto")`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -114,6 +129,8 @@ The backend is chosen automatically based on the input type:
 | `percent` | `bool` | Return percentages (0–100) instead of raw counts. Default `False` |
 | `save_metadata` | `bool` | Write results as GDAL tags in the source GeoTIFF. Only valid when `data` is a file path. Default `False` |
 | `metadata_prefix` | `str` or `None` | Custom tag prefix. Defaults to `CLASS_COUNT_` or `CLASS_PERCENT_` (when `percent=True`) |
+| `mask` | bool `ndarray`, bool `Tensor`, or `None` | Count only elements where the mask is `True`. Same shape as the data, or broadcastable to it. Default `None` (count everything) |
+| `backend` | `str` | `"auto"`, `"numpy"`, `"numba"` or `"torch"`. Default `"auto"` |
 
 **Returns:** `dict[int | str, int]` mapping class values (or names) to counts, or `dict[int | str, float]` when `percent=True`.
 

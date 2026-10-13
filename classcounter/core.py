@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ _SIGNED_BIN_LIMIT = 65536
 # per-element work of the single-pass kernel makes it slower.
 _SIGNED_SINGLE_PASS_BYTES = 50 * 1024 * 1024
 
+_BACKENDS = ("auto", "numpy", "numba", "torch")
+
 
 def _is_nonneg_int(flat: np.ndarray) -> bool:
     """Check if a flat array is non-negative integer (skips min() for unsigned dtypes).
@@ -41,10 +44,14 @@ def _is_nonneg_int(flat: np.ndarray) -> bool:
     return flat.size > 0 and flat.min() >= 0
 
 
-def _count_bool(flat: np.ndarray) -> dict[int, int]:
+def _count_bool(flat: np.ndarray, mask: np.ndarray | None = None) -> dict[int, int]:
     """Fast path for boolean arrays using count_nonzero."""
-    n_true = int(np.count_nonzero(flat))
-    n_false = flat.size - n_true
+    if mask is None:
+        n_true = int(np.count_nonzero(flat))
+        n_false = flat.size - n_true
+    else:
+        n_true = int(np.count_nonzero(flat & mask))
+        n_false = int(np.count_nonzero(mask)) - n_true
     result: dict[int, int] = {}
     if n_false > 0:
         result[0] = n_false
@@ -72,6 +79,8 @@ def count_classes(
     percent: bool = False,
     save_metadata: bool = False,
     metadata_prefix: str | None = None,
+    mask: np.ndarray | Any | None = None,
+    backend: str = "auto",
 ) -> dict[int | str, int] | dict[int | str, float]:
     """Count occurrences of each unique class value.
 
@@ -90,14 +99,30 @@ def count_classes(
         metadata_prefix: Custom prefix for metadata tag names. When *None*,
             defaults to ``CLASS_COUNT_`` for raw counts or ``CLASS_PERCENT_``
             when *percent* is True.
+        mask: Optional boolean array or tensor, the same shape as the data or
+            broadcastable to it. Only elements where *mask* is True are
+            counted, and percentages are of the masked total. For a file
+            path, the mask applies to the loaded ``(bands, rows, cols)``
+            raster, so a ``(rows, cols)`` mask covers every band.
+        backend: ``"auto"`` (default) picks PyTorch for tensors, otherwise
+            Numba if it is installed, otherwise NumPy. ``"numpy"``,
+            ``"numba"`` or ``"torch"`` forces that backend, so results and
+            first-call cost don't depend on what else happens to be
+            installed. ``"numpy"`` and ``"numba"`` take arrays or file paths;
+            ``"torch"`` takes tensors.
 
     Returns:
         Dict mapping class values (or names) to their counts or percentages.
 
     Raises:
-        TypeError: If data is not an ndarray, Tensor, str, or Path.
+        TypeError: If data is not an ndarray, Tensor, str, or Path, if
+            *mask* is not boolean, or if *backend* does not support the
+            input type (e.g. ``"numba"`` with a torch tensor).
+        ValueError: If *mask* cannot be broadcast to the data's shape, or
+            *backend* is not a recognised name.
         ImportError: If a torch tensor is given but torch is not installed,
-            or a file path is given but rasterio is not installed.
+            a file path is given but rasterio is not installed, or
+            ``backend="numba"`` is requested without numba installed.
 
     Examples:
         >>> import numpy as np
@@ -110,14 +135,33 @@ def count_classes(
         >>> count_classes(np.array([0, 0, 1, 1, 1, 2]), percent=True)
         {0: 33.33, 1: 50.0, 2: 16.67}
     """
-    arr, use_torch = _resolve_input(data)
+    if backend not in _BACKENDS:
+        msg = f"backend must be one of {_BACKENDS}, got {backend!r}."
+        raise ValueError(msg)
 
-    if use_torch:
-        counts = _count_torch(arr)
-    elif _has_numba():
-        counts = _count_numba(arr)
+    arr, is_tensor = _resolve_input(data)
+
+    if backend == "auto":
+        backend = "torch" if is_tensor else "numba" if _has_numba() else "numpy"
+    elif backend == "torch" and not is_tensor:
+        msg = (
+            "backend='torch' requires a torch tensor. Convert with "
+            "torch.from_numpy(), or use backend='numpy' or 'numba'."
+        )
+        raise TypeError(msg)
+    elif backend != "torch" and is_tensor:
+        msg = (
+            f"backend={backend!r} does not accept torch tensors. Use "
+            "backend='torch', or convert with tensor.cpu().numpy()."
+        )
+        raise TypeError(msg)
+
+    if backend == "torch":
+        counts = _count_torch(arr, mask)
+    elif backend == "numba":
+        counts = _count_numba(arr, mask)
     else:
-        counts = _count_numpy(arr)
+        counts = _count_numpy(arr, mask)
 
     result: dict[int | str, int] | dict[int | str, float]
     if names is not None:
@@ -158,12 +202,14 @@ def _resolve_input(
     Returns:
         Tuple of (array_or_tensor, use_torch).
     """
-    torch_module = _try_import_torch()
-
     if isinstance(data, str | Path):
         return _load_raster(Path(data)), False
     if isinstance(data, np.ndarray):
         return data, False
+    # A tensor can only exist if torch is already imported, so look it up
+    # rather than importing it: `import torch` takes ~1s and would otherwise
+    # be paid by every process that only ever counts numpy arrays.
+    torch_module = sys.modules.get("torch")
     if torch_module is not None and isinstance(data, torch_module.Tensor):
         return data, True
 
@@ -171,9 +217,26 @@ def _resolve_input(
     raise TypeError(msg)
 
 
-def _count_numpy(arr: np.ndarray) -> dict[int, int]:
+def _flat_mask_numpy(mask: Any, shape: tuple[int, ...]) -> np.ndarray:
+    """Validate *mask* and return it as a flat bool array matching ``arr.ravel()``."""
+    m = np.asarray(mask)
+    if m.dtype != np.bool_:
+        msg = f"mask must be a boolean array, got dtype {m.dtype}."
+        raise TypeError(msg)
+    try:
+        m = np.broadcast_to(m, shape)
+    except ValueError:
+        msg = f"mask shape {m.shape} cannot be broadcast to data shape {shape}."
+        raise ValueError(msg) from None
+    return m.ravel()
+
+
+def _count_numpy(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
     """Count unique values using numpy.bincount."""
     flat = arr.ravel()
+    if mask is not None:
+        # Fallback backend: a plain boolean-index copy keeps this simple.
+        flat = flat[_flat_mask_numpy(mask, arr.shape)]
     if flat.dtype == np.bool_:
         return _count_bool(flat)
     if flat.size > 0 and _is_nonneg_int(flat):
@@ -184,7 +247,24 @@ def _count_numpy(arr: np.ndarray) -> dict[int, int]:
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
 
 
-def _count_torch(tensor: Any) -> dict[int, int]:
+def _flat_mask_torch(torch_module: Any, mask: Any, tensor: Any) -> Any:
+    """Validate *mask* and return it as a flat bool tensor on *tensor*'s device."""
+    m = mask if isinstance(mask, torch_module.Tensor) else torch_module.as_tensor(np.asarray(mask))
+    if m.dtype != torch_module.bool:
+        msg = f"mask must be a boolean array or tensor, got dtype {m.dtype}."
+        raise TypeError(msg)
+    try:
+        m = torch_module.broadcast_to(m, tensor.shape)
+    except RuntimeError:
+        msg = (
+            f"mask shape {tuple(m.shape)} cannot be broadcast to "
+            f"data shape {tuple(tensor.shape)}."
+        )
+        raise ValueError(msg) from None
+    return m.to(tensor.device).reshape(-1)
+
+
+def _count_torch(tensor: Any, mask: Any = None) -> dict[int, int]:
     """Count unique values using torch.bincount (O(n), no sort)."""
     torch_module = _try_import_torch()
     if torch_module is None:
@@ -198,23 +278,47 @@ def _count_torch(tensor: Any) -> dict[int, int]:
         flat = flat.to(torch_module.int8)
     if flat.numel() == 0:
         return {}
-    if not flat.is_floating_point():
-        # For unsigned dtypes, skip the full-pass min() check (and on GPU,
-        # the implicit sync that .min() forces).
-        is_unsigned = flat.dtype in _torch_unsigned_dtypes(torch_module)
-        if is_unsigned and flat.dtype != torch_module.uint8:
-            # torch.bincount only implements uint8 among unsigned dtypes.
-            # uint16/uint32 widen losslessly to int64; uint64 may not, so
-            # route it to unique().
-            if flat.dtype == getattr(torch_module, "uint64", None):
-                values, counts = torch_module.unique(flat, return_counts=True)
-                return dict(zip(values.tolist(), counts.tolist(), strict=True))
+
+    # Unsigned values are known non-negative, so bincount can skip the
+    # full-pass min() check (and on GPU, the implicit sync that .min() forces).
+    nonneg = flat.dtype in _torch_unsigned_dtypes(torch_module)
+    m = None if mask is None else _flat_mask_torch(torch_module, mask, tensor)
+    is_uint64 = flat.dtype == getattr(torch_module, "uint64", None)
+    if nonneg and flat.dtype != torch_module.uint8:
+        # bincount, where and indexing only implement uint8 among unsigned
+        # dtypes. uint16/uint32 widen losslessly to int64. uint64 is
+        # reinterpreted as int64 (same bits, no copy); values >= 2**63 show
+        # up negative and are mapped back below.
+        if is_uint64:
+            flat = flat.view(torch_module.int64)
+            nonneg = False
+        else:
             flat = flat.to(torch_module.int64)
-        if is_unsigned or bool(flat.min() >= 0):
-            counts_list = torch_module.bincount(flat).tolist()
-            return {i: c for i, c in enumerate(counts_list) if c > 0}
+
+    n_excluded = None
+    if m is not None:
+        # Boolean indexing (flat[m]) has a data-dependent shape and forces a
+        # host sync. Instead, overwrite excluded elements with 0, count as
+        # usual, and subtract the excluded total from the 0 bin on-device.
+        zero = torch_module.zeros((), dtype=flat.dtype, device=flat.device)
+        flat = torch_module.where(m, flat, zero)
+        n_excluded = m.numel() - m.sum()
+
+    if not flat.is_floating_point() and (nonneg or bool(flat.min() >= 0)):
+        counts = torch_module.bincount(flat)
+        if n_excluded is not None:
+            counts[0] -= n_excluded
+        return {i: c for i, c in enumerate(counts.tolist()) if c > 0}
+
     values, counts = torch_module.unique(flat, return_counts=True)
-    return dict(zip(values.tolist(), counts.tolist(), strict=True))
+    if n_excluded is not None:
+        counts = counts - (values == 0) * n_excluded
+    result = {
+        v: c for v, c in zip(values.tolist(), counts.tolist(), strict=True) if c > 0
+    }
+    if is_uint64:
+        result = {(v + 2**64 if v < 0 else v): c for v, c in result.items()}
+    return result
 
 
 _torch_unsigned_dtypes_cache: tuple[Any, ...] | None = None
@@ -231,7 +335,7 @@ def _torch_unsigned_dtypes(torch_module: Any) -> tuple[Any, ...]:
     return _torch_unsigned_dtypes_cache
 
 
-def _count_numba(arr: np.ndarray) -> dict[int, int]:
+def _count_numba(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
     """Count unique values using a numba-jitted loop."""
     try:
         from classcounter._numba import (
@@ -247,6 +351,8 @@ def _count_numba(arr: np.ndarray) -> dict[int, int]:
         raise ImportError(msg) from None
 
     flat = arr.ravel()
+    if mask is not None:
+        return _count_numba_masked(flat, _flat_mask_numpy(mask, arr.shape))
     if flat.dtype == np.bool_:
         return _count_bool(flat)
     if flat.size == 0:
@@ -288,6 +394,34 @@ def _count_numba(arr: np.ndarray) -> dict[int, int]:
 
     values, counts = np.unique(flat, return_counts=True)
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
+
+
+def _count_numba_masked(flat: np.ndarray, mask: np.ndarray) -> dict[int, int]:
+    """Masked variant of :func:`_count_numba`; skips excluded elements in-kernel."""
+    from classcounter._numba import bincount_masked_numba, minmax_masked_numba
+
+    if flat.dtype == np.bool_:
+        return _count_bool(flat, mask)
+    if flat.size == 0:
+        return {}
+
+    fixed_bins = _FIXED_BIN_DTYPES.get(flat.dtype)
+    if fixed_bins is not None:
+        bin_counts = bincount_masked_numba(flat, mask, fixed_bins)
+    elif np.issubdtype(flat.dtype, np.integer):
+        min_val, max_val, found = minmax_masked_numba(flat, mask)
+        if not found:
+            return {}
+        if min_val < 0:
+            values, counts = np.unique(flat[mask], return_counts=True)
+            return dict(zip(values.tolist(), counts.tolist(), strict=True))
+        bin_counts = bincount_masked_numba(flat, mask, int(max_val) + 1)
+    else:
+        values, counts = np.unique(flat[mask], return_counts=True)
+        return dict(zip(values.tolist(), counts.tolist(), strict=True))
+
+    nonzero = np.nonzero(bin_counts)[0]
+    return dict(zip(nonzero.tolist(), bin_counts[nonzero].tolist(), strict=True))
 
 
 def save_counts_to_raster(
