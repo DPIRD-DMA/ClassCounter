@@ -126,3 +126,37 @@ def test_counting_arrays_does_not_import_torch():
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert out.stdout.strip() == "False"
+
+
+@pytest.mark.geo
+class TestBackendArgFilePath:
+
+    @pytest.fixture
+    def tif(self, tmp_path):
+        rasterio = pytest.importorskip("rasterio")
+        from rasterio.transform import from_bounds
+
+        path = tmp_path / "t.tif"
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=1,
+            width=3,
+            count=1,
+            dtype="uint8",
+            transform=from_bounds(0, 0, 3, 1, 3, 1),
+            crs="EPSG:4326",
+        ) as dst:
+            dst.write(np.array([[0, 2, 2]], dtype=np.uint8), 1)
+        return path
+
+    @pytest.mark.parametrize(
+        "backend", ["numpy", pytest.param("numba", marks=skip_no_numba)]
+    )
+    def test_array_backends_accept_path(self, tif, backend):
+        assert count_classes(tif, backend=backend) == {0: 1, 2: 2}
+
+    def test_torch_backend_rejects_path(self, tif):
+        with pytest.raises(TypeError, match="backend='torch' requires a torch tensor"):
+            count_classes(tif, backend="torch")

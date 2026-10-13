@@ -205,3 +205,101 @@ def test_mask_with_file_path(tmp_path):
 
     mask = np.array([[True, True, False], [True, False, False]])  # (rows, cols)
     assert count_classes(path, mask=mask) == {0: 1, 1: 1, 2: 1}
+
+
+@pytest.mark.parametrize("backend", BACKENDS, ids=BACKEND_IDS)
+class TestMaskSparseAndLayout:
+
+    @pytest.mark.parametrize("pos", [0, 5_000, -1])
+    def test_single_selected_element(self, backend, pos):
+        # Most per-thread chunks select nothing; exercises the found/merge
+        # logic in the masked min/max kernel.
+        _, fn = backend
+        data = np.arange(10_007, dtype=np.int32) % 7
+        mask = np.zeros(data.size, dtype=bool)
+        mask[pos] = True
+        assert fn(data, mask) == {int(data[pos]): 1}
+
+    def test_only_negative_selected(self, backend):
+        _, fn = backend
+        data = np.full(10_007, 4, dtype=np.int16)
+        data[-1] = -9
+        mask = np.zeros(data.size, dtype=bool)
+        mask[-1] = True
+        assert fn(data, mask) == {-9: 1}
+
+    def test_non_contiguous_data_and_mask(self, backend):
+        _, fn = backend
+        data = _make_data(np.uint8, size=60 * 70).reshape(60, 70).T
+        mask = _make_mask(data.size).reshape(60, 70).T
+        assert not data.flags.c_contiguous
+        assert fn(data, mask) == _count_numpy(data[mask])
+
+
+@pytest.mark.skipif(not HAS_NUMBA, reason="numba not installed")
+@pytest.mark.parametrize("threads", [1, 3])
+def test_numba_respects_set_num_threads(threads):
+    import numba
+
+    from classcounter.core import _count_numba
+
+    data = _make_data(np.int32)
+    mask = _make_mask(data.size)
+    previous = numba.get_num_threads()
+    numba.set_num_threads(threads)
+    try:
+        assert _count_numba(data) == _count_numpy(data)
+        assert _count_numba(data, mask) == _count_numpy(data[mask])
+    finally:
+        numba.set_num_threads(previous)
+
+
+def _cuda_available():
+    if not HAS_TORCH:
+        return False
+    import torch
+
+    return torch.cuda.is_available()
+
+
+skip_no_cuda = pytest.mark.skipif(not _cuda_available(), reason="CUDA not available")
+
+
+@skip_no_cuda
+class TestMaskCuda:
+
+    @pytest.mark.parametrize("mask_kind", ["numpy", "torch-cpu"])
+    def test_cpu_mask_with_cuda_tensor(self, mask_kind):
+        import torch
+
+        data = _make_data(np.uint8)
+        mask = _make_mask(data.size)
+        m = mask if mask_kind == "numpy" else torch.from_numpy(mask)
+        tensor = torch.from_numpy(data).cuda()
+        assert count_classes(tensor, mask=m) == _count_numpy(data[mask])
+
+    def test_mask_adds_no_gpu_syncs(self):
+        import warnings
+
+        import torch
+
+        from classcounter.core import _count_torch
+
+        tensor = torch.from_numpy(_make_data(np.uint8)).cuda()
+        mask = torch.from_numpy(_make_mask(tensor.numel())).cuda()
+        _count_torch(tensor, mask)  # warm up
+        torch.cuda.synchronize()
+
+        def syncs(fn):
+            torch.cuda.set_sync_debug_mode("warn")
+            try:
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    fn()
+            finally:
+                torch.cuda.set_sync_debug_mode(0)
+            return sum("synchroniz" in str(w.message).lower() for w in caught)
+
+        assert syncs(lambda: _count_torch(tensor, mask)) <= syncs(
+            lambda: _count_torch(tensor)
+        )
