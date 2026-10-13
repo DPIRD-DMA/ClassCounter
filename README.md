@@ -131,14 +131,16 @@ Writes each entry as a GDAL metadata tag (e.g. `CLASS_COUNT_0=1234`). Existing t
 
 ## Performance
 
-Benchmarks on a Ryzen 9 5950X with RTX 4090, 100M-element arrays:
+Benchmarks on a Ryzen 9 5950X with RTX 4090, 100M-element uint8 arrays:
 
-| Backend       | Time (ms) |
-|---------------|-----------|
-| NumPy         | 178     |
-| Numba         | 17      |
-| PyTorch CPU   | 38      |
-| PyTorch GPU   | 2       |
+| Backend                     | Time (ms) |
+|-----------------------------|-----------|
+| NumPy (CPU)                 | 178       |
+| Numba (CPU, multithreaded)  | 17        |
+| PyTorch CPU                 | 38        |
+| PyTorch GPU (CUDA)          | 2         |
+
+The Numba backend runs on the CPU only. For GPU counting, pass a CUDA tensor to use the PyTorch backend.
 
 ![Backend comparison](https://raw.githubusercontent.com/DPIRD-DMA/ClassCounter/main/images/Backend%20comparison.png)
 
