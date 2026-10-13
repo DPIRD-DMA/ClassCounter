@@ -39,6 +39,17 @@ class TestTorchBackend:
         result = _count_torch(tensor)
         assert result == {1.0: 2, 2.5: 2}
 
+    @pytest.mark.parametrize("dtype_name", ["uint8", "uint16", "uint32", "uint64"])
+    def test_unsigned_dtypes(self, torch_module, dtype_name):
+        from classcounter.core import _count_torch
+
+        dtype = getattr(torch_module, dtype_name, None)
+        if dtype is None:
+            pytest.skip(f"torch has no {dtype_name}")
+        tensor = torch_module.tensor([0, 1, 1, 5], dtype=dtype)
+        result = _count_torch(tensor)
+        assert result == {0: 1, 1: 2, 5: 1}
+
     def test_empty_tensor(self, torch_module):
         from classcounter.core import _count_torch
 

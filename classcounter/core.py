@@ -10,6 +10,24 @@ _torch_module: Any = None
 _torch_checked = False
 _has_numba_cached: bool | None = None
 
+# Unsigned dtypes whose entire value range fits in a small bin array — we can
+# skip the `flat.max()` pass and pre-allocate `dtype.max + 1` bins instead.
+_FIXED_BIN_DTYPES: dict[Any, int] = {
+    np.dtype(np.uint8): 256,
+    np.dtype(np.uint16): 65536,
+}
+
+# Upper bound for the single-pass signed-int histogram. 65536 keeps the
+# per-thread local-counts row at 512 KB (fits in L2). Values above this
+# trigger a one-time fall back to the two-pass max+bincount path.
+_SIGNED_BIN_LIMIT = 65536
+
+# Byte size above which the single-pass signed-int kernel beats the
+# minmax+bincount approach. Below ~L3-cache size, the second scan in the
+# two-pass approach hits cache and is essentially free, so the extra
+# per-element work of the single-pass kernel makes it slower.
+_SIGNED_SINGLE_PASS_BYTES = 50 * 1024 * 1024
+
 
 def _is_nonneg_int(flat: np.ndarray) -> bool:
     """Check if a flat array is non-negative integer (skips min() for unsigned dtypes).
@@ -178,17 +196,49 @@ def _count_torch(tensor: Any) -> dict[int, int]:
     flat = tensor.ravel()
     if flat.dtype == torch_module.bool:
         flat = flat.to(torch_module.int8)
-    if flat.numel() > 0 and not flat.is_floating_point() and flat.min() >= 0:
-        counts_list = torch_module.bincount(flat).tolist()
-        return {i: c for i, c in enumerate(counts_list) if c > 0}
+    if flat.numel() == 0:
+        return {}
+    if not flat.is_floating_point():
+        # For unsigned dtypes, skip the full-pass min() check (and on GPU,
+        # the implicit sync that .min() forces).
+        is_unsigned = flat.dtype in _torch_unsigned_dtypes(torch_module)
+        if is_unsigned and flat.dtype != torch_module.uint8:
+            # torch.bincount only implements uint8 among unsigned dtypes.
+            # uint16/uint32 widen losslessly to int64; uint64 may not, so
+            # route it to unique().
+            if flat.dtype == getattr(torch_module, "uint64", None):
+                values, counts = torch_module.unique(flat, return_counts=True)
+                return dict(zip(values.tolist(), counts.tolist(), strict=True))
+            flat = flat.to(torch_module.int64)
+        if is_unsigned or bool(flat.min() >= 0):
+            counts_list = torch_module.bincount(flat).tolist()
+            return {i: c for i, c in enumerate(counts_list) if c > 0}
     values, counts = torch_module.unique(flat, return_counts=True)
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
+
+
+_torch_unsigned_dtypes_cache: tuple[Any, ...] | None = None
+
+
+def _torch_unsigned_dtypes(torch_module: Any) -> tuple[Any, ...]:
+    """Return the set of unsigned integer dtypes available in this torch build."""
+    global _torch_unsigned_dtypes_cache  # noqa: PLW0603
+    if _torch_unsigned_dtypes_cache is None:
+        names = ("uint8", "uint16", "uint32", "uint64")
+        _torch_unsigned_dtypes_cache = tuple(
+            getattr(torch_module, n) for n in names if hasattr(torch_module, n)
+        )
+    return _torch_unsigned_dtypes_cache
 
 
 def _count_numba(arr: np.ndarray) -> dict[int, int]:
     """Count unique values using a numba-jitted loop."""
     try:
-        from classcounter._numba import bincount_numba
+        from classcounter._numba import (
+            bincount_numba,
+            bincount_signed_numba,
+            minmax_numba,
+        )
     except ImportError:
         msg = (
             "numba is required for the numba backend. "
@@ -199,11 +249,43 @@ def _count_numba(arr: np.ndarray) -> dict[int, int]:
     flat = arr.ravel()
     if flat.dtype == np.bool_:
         return _count_bool(flat)
-    if flat.size > 0 and _is_nonneg_int(flat):
-        max_val = int(flat.max())
-        bin_counts = bincount_numba(flat, max_val + 1)
+    if flat.size == 0:
+        return {}
+
+    # uint8 / uint16: dtype max is small enough to allocate bins directly,
+    # so we skip the entire max() pass over the data.
+    fixed_bins = _FIXED_BIN_DTYPES.get(flat.dtype)
+    if fixed_bins is not None:
+        bin_counts = bincount_numba(flat, fixed_bins)
         nonzero = np.nonzero(bin_counts)[0]
         return dict(zip(nonzero.tolist(), bin_counts[nonzero].tolist(), strict=True))
+
+    if np.issubdtype(flat.dtype, np.integer):
+        if np.issubdtype(flat.dtype, np.unsignedinteger):
+            max_val = int(flat.max())
+            bin_counts = bincount_numba(flat, max_val + 1)
+        elif flat.nbytes >= _SIGNED_SINGLE_PASS_BYTES:
+            # Large signed array: single-pass histogram that also tracks
+            # min/max so we skip a separate scan for the max.
+            bin_counts, min_val, max_val = bincount_signed_numba(
+                flat, _SIGNED_BIN_LIMIT
+            )
+            if min_val < 0:
+                values, counts = np.unique(flat, return_counts=True)
+                return dict(zip(values.tolist(), counts.tolist(), strict=True))
+            if max_val >= _SIGNED_BIN_LIMIT:
+                bin_counts = bincount_numba(flat, int(max_val) + 1)
+        else:
+            # Small signed array: cheap separate min/max scan avoids the
+            # ~0.5 ms cost of allocating the large single-pass workspace.
+            min_val, max_val = minmax_numba(flat)
+            if min_val < 0:
+                values, counts = np.unique(flat, return_counts=True)
+                return dict(zip(values.tolist(), counts.tolist(), strict=True))
+            bin_counts = bincount_numba(flat, int(max_val) + 1)
+        nonzero = np.nonzero(bin_counts)[0]
+        return dict(zip(nonzero.tolist(), bin_counts[nonzero].tolist(), strict=True))
+
     values, counts = np.unique(flat, return_counts=True)
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
 
