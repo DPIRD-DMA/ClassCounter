@@ -11,7 +11,6 @@ from classcounter import count_classes
 
 
 class TestNamesMapping:
-
     def test_names_maps_keys(self, simple_array, names_mapping):
         result = count_classes(simple_array, names=names_mapping)
         assert result["water"] == 3
@@ -61,9 +60,7 @@ class TestNamesMapping:
         assert len(record) == 2  # one warning per unmapped class
 
 
-
 class TestUnmappedClassWarning:
-
     def test_warning_emitted_for_unmapped_class(self):
         arr = np.array([0, 0, 99], dtype=np.int32)
         names = {0: "water"}

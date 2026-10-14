@@ -6,7 +6,6 @@ from classcounter import count_classes
 
 
 class TestCountClassesBasic:
-
     def test_basic_count(self, simple_array):
         result = count_classes(simple_array)
         assert result == {0: 3, 1: 2, 3: 1}

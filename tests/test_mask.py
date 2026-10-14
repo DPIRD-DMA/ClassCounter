@@ -82,7 +82,6 @@ BACKEND_IDS = [b[0] for b in BACKENDS]
 @pytest.mark.parametrize("backend", BACKENDS, ids=BACKEND_IDS)
 @pytest.mark.parametrize("dtype", DTYPES, ids=lambda d: np.dtype(d).name)
 class TestMaskMatchesIndexing:
-
     def test_matches_boolean_index(self, backend, dtype):
         _, fn = backend
         data = _make_data(dtype)
@@ -102,7 +101,6 @@ class TestMaskMatchesIndexing:
 
 @pytest.mark.parametrize("backend", BACKENDS, ids=BACKEND_IDS)
 class TestMaskedOutValuesIgnored:
-
     def test_negative_values_masked_out(self, backend):
         # Negatives only in the excluded region must not affect the result.
         _, fn = backend
@@ -133,7 +131,6 @@ class TestMaskedOutValuesIgnored:
 
 
 class TestMaskCountClasses:
-
     def test_names_absent_class_gets_zero(self):
         data = np.array([0, 1, 1, 2], dtype=np.uint8)
         mask = np.array([True, True, True, False])
@@ -142,9 +139,7 @@ class TestMaskCountClasses:
 
     def test_all_false_with_names_gives_zeros(self):
         data = np.array([0, 1], dtype=np.uint8)
-        result = count_classes(
-            data, names={0: "a", 1: "b"}, mask=np.zeros(2, dtype=bool)
-        )
+        result = count_classes(data, names={0: "a", 1: "b"}, mask=np.zeros(2, dtype=bool))
         assert result == {"a": 0, "b": 0}
 
     def test_percent_of_masked_total(self):
@@ -174,7 +169,6 @@ class TestMaskCountClasses:
 
 @skip_no_torch
 class TestMaskTorchInputs:
-
     def test_numpy_mask_with_tensor(self):
         import torch
 
@@ -223,7 +217,6 @@ def test_mask_with_file_path(tmp_path):
 
 @pytest.mark.parametrize("backend", BACKENDS, ids=BACKEND_IDS)
 class TestMaskSparseAndLayout:
-
     @pytest.mark.parametrize("pos", [0, 5_000, -1])
     def test_single_selected_element(self, backend, pos):
         # Most per-thread chunks select nothing; exercises the found/merge
@@ -285,7 +278,6 @@ skip_no_cuda = pytest.mark.skipif(not _cuda_available(), reason="CUDA not availa
 
 @skip_no_cuda
 class TestMaskCuda:
-
     @pytest.mark.parametrize("mask_kind", ["numpy", "torch-cpu"])
     def test_cpu_mask_with_cuda_tensor(self, mask_kind):
         import torch
@@ -318,6 +310,4 @@ class TestMaskCuda:
                 torch.cuda.set_sync_debug_mode(0)
             return sum("synchroniz" in str(w.message).lower() for w in caught)
 
-        assert syncs(lambda: _count_torch(tensor, mask)) <= syncs(
-            lambda: _count_torch(tensor)
-        )
+        assert syncs(lambda: _count_torch(tensor, mask)) <= syncs(lambda: _count_torch(tensor))

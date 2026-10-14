@@ -20,9 +20,7 @@ _SERIAL_MAX_ELEMENTS = 1 << 21
 
 
 @numba.njit(parallel=True, cache=True)
-def _bincount_kernel(
-    flat: NDArray[np.integer], num_bins: int, n_threads: int
-) -> NDArray[np.int64]:
+def _bincount_kernel(flat: NDArray[np.integer], num_bins: int, n_threads: int) -> NDArray[np.int64]:
     chunk_size = (flat.size + n_threads - 1) // n_threads
     local_counts = np.zeros((n_threads, num_bins), dtype=np.int64)
 

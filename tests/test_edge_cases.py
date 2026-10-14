@@ -9,7 +9,6 @@ from classcounter import count_classes
 
 
 class TestEmptyArrays:
-
     def test_empty_1d(self, empty_array):
         assert count_classes(empty_array) == {}
 
@@ -23,7 +22,6 @@ class TestEmptyArrays:
 
 
 class TestSingleElement:
-
     def test_single_zero(self):
         assert count_classes(np.array([0], dtype=np.int32)) == {0: 1}
 
@@ -32,7 +30,6 @@ class TestSingleElement:
 
 
 class TestShapeHandling:
-
     @pytest.mark.parametrize(
         "shape",
         [(12,), (3, 4), (2, 2, 3), (1, 12), (12, 1), (1, 1, 12)],
@@ -45,7 +42,6 @@ class TestShapeHandling:
 
 
 class TestNegativeValues:
-
     def test_all_negative(self):
         arr = np.array([-3, -3, -1, -1, -1], dtype=np.int32)
         assert count_classes(arr) == {-3: 2, -1: 3}
@@ -55,7 +51,6 @@ class TestNegativeValues:
 
 
 class TestFloatValues:
-
     def test_float32(self):
         arr = np.array([0.0, 0.0, 1.5, 1.5, 1.5], dtype=np.float32)
         assert count_classes(arr) == {0.0: 2, 1.5: 3}
@@ -65,7 +60,6 @@ class TestFloatValues:
 
 
 class TestLargeValues:
-
     def test_high_class_values(self):
         arr = np.array([0, 1_000_000], dtype=np.int64)
         assert count_classes(arr) == {0: 1, 1_000_000: 1}

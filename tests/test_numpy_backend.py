@@ -9,7 +9,6 @@ from classcounter.core import _count_numpy
 
 
 class TestNumpyBackend:
-
     def test_small_array_bincount_path(self, simple_array):
         result = _count_numpy(simple_array)
         assert result == {0: 3, 1: 2, 3: 1}

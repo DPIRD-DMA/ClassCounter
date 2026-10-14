@@ -19,7 +19,6 @@ def data():
 
 
 class TestBackendArg:
-
     @pytest.mark.parametrize(
         "backend",
         [
@@ -57,7 +56,6 @@ class TestBackendArg:
 
 @skip_no_torch
 class TestBackendArgTensors:
-
     def test_torch_backend_with_tensor(self, data):
         import torch
 
@@ -121,15 +119,12 @@ def test_counting_arrays_does_not_import_torch():
         "count_classes(np.array([0, 1, 1], dtype=np.uint8))\n"
         "print('torch' in sys.modules)\n"
     )
-    out = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=True
-    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False"
 
 
 @pytest.mark.geo
 class TestBackendArgFilePath:
-
     @pytest.fixture
     def tif(self, tmp_path):
         rasterio = pytest.importorskip("rasterio")
@@ -150,9 +145,7 @@ class TestBackendArgFilePath:
             dst.write(np.array([[0, 2, 2]], dtype=np.uint8), 1)
         return path
 
-    @pytest.mark.parametrize(
-        "backend", ["numpy", pytest.param("numba", marks=skip_no_numba)]
-    )
+    @pytest.mark.parametrize("backend", ["numpy", pytest.param("numba", marks=skip_no_numba)])
     def test_array_backends_accept_path(self, tif, backend):
         assert count_classes(tif, backend=backend) == {0: 1, 2: 2}
 

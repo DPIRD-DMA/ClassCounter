@@ -8,12 +8,11 @@
 """Test that classcounter[all] works with every backend available."""
 
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from classcounter import count_classes, save_counts_to_raster
+from classcounter import count_classes
 
 
 def test_all_optional_deps_importable():

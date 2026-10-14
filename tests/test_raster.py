@@ -63,7 +63,6 @@ def multiband_geotiff(tmp_path):
 
 
 class TestRasterLoading:
-
     def test_load_geotiff_string_path(self, tiny_geotiff):
         from classcounter import count_classes
 
@@ -92,7 +91,6 @@ class TestRasterLoading:
 
 
 class TestSaveCountsToRaster:
-
     def test_saves_tags(self, tiny_geotiff):
         import rasterio
 
@@ -222,9 +220,7 @@ class TestSaveCountsToRaster:
 
         from classcounter import count_classes
 
-        count_classes(
-            str(tiny_geotiff), percent=True, save_metadata=True, metadata_prefix="MY_"
-        )
+        count_classes(str(tiny_geotiff), percent=True, save_metadata=True, metadata_prefix="MY_")
 
         with rasterio.open(tiny_geotiff) as src:
             tags = src.tags()

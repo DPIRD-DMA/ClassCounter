@@ -257,8 +257,7 @@ def _flat_mask_torch(torch_module: Any, mask: Any, tensor: Any) -> Any:
         m = torch_module.broadcast_to(m, tensor.shape)
     except RuntimeError:
         msg = (
-            f"mask shape {tuple(m.shape)} cannot be broadcast to "
-            f"data shape {tuple(tensor.shape)}."
+            f"mask shape {tuple(m.shape)} cannot be broadcast to data shape {tuple(tensor.shape)}."
         )
         raise ValueError(msg) from None
     return m.to(tensor.device).reshape(-1)
@@ -313,9 +312,7 @@ def _count_torch(tensor: Any, mask: Any = None) -> dict[int, int]:
     values, counts = torch_module.unique(flat, return_counts=True)
     if n_excluded is not None:
         counts = counts - (values == 0) * n_excluded
-    result = {
-        v: c for v, c in zip(values.tolist(), counts.tolist(), strict=True) if c > 0
-    }
+    result = {v: c for v, c in zip(values.tolist(), counts.tolist(), strict=True) if c > 0}
     if is_uint64:
         result = {(v + 2**64 if v < 0 else v): c for v, c in result.items()}
     return result
@@ -345,8 +342,7 @@ def _count_numba(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
         )
     except ImportError:
         msg = (
-            "numba is required for the numba backend. "
-            "Install with: pip install classcounter[numba]"
+            "numba is required for the numba backend. Install with: pip install classcounter[numba]"
         )
         raise ImportError(msg) from None
 
@@ -373,9 +369,7 @@ def _count_numba(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
         elif flat.nbytes >= _SIGNED_SINGLE_PASS_BYTES:
             # Large signed array: single-pass histogram that also tracks
             # min/max so we skip a separate scan for the max.
-            bin_counts, min_val, max_val = bincount_signed_numba(
-                flat, _SIGNED_BIN_LIMIT
-            )
+            bin_counts, min_val, max_val = bincount_signed_numba(flat, _SIGNED_BIN_LIMIT)
             if min_val < 0:
                 values, counts = np.unique(flat, return_counts=True)
                 return dict(zip(values.tolist(), counts.tolist(), strict=True))
@@ -477,8 +471,7 @@ def _load_raster(path: Path) -> np.ndarray:
         import rasterio
     except ImportError:
         msg = (
-            "rasterio is required to read raster files. "
-            "Install with: pip install classcounter[geo]"
+            "rasterio is required to read raster files. Install with: pip install classcounter[geo]"
         )
         raise ImportError(msg) from None
 

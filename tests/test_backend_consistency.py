@@ -5,11 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from classcounter.core import _count_numba, _count_numpy, _count_torch
 from tests.conftest import skip_no_numba, skip_no_torch
 
 pytestmark = [pytest.mark.torch, pytest.mark.numba, skip_no_torch, skip_no_numba]
-
-from classcounter.core import _count_numba, _count_numpy, _count_torch
 
 
 def _run_all_backends(data: np.ndarray) -> list[dict]:
@@ -25,7 +24,6 @@ def _run_all_backends(data: np.ndarray) -> list[dict]:
 
 
 class TestBackendConsistency:
-
     def test_simple_positive_integers(self, simple_array):
         results = _run_all_backends(simple_array)
         assert results[0] == results[1] == results[2]

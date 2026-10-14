@@ -13,7 +13,6 @@ from classcounter import count_classes
 
 
 class TestTypeErrors:
-
     def test_unsupported_type_list(self):
         with pytest.raises(TypeError, match="Unsupported data type"):
             count_classes([1, 2, 3])
@@ -36,7 +35,6 @@ class TestTypeErrors:
 
 
 class TestImportErrors:
-
     def test_torch_import_cache_miss(self):
         """Exercise the except branch inside _try_import_torch."""
         saved_checked = _core._torch_checked

@@ -21,7 +21,6 @@ def kernel_mode(request, monkeypatch):
 
 
 class TestNumbaBackend:
-
     def test_basic_count(self, simple_array):
         from classcounter.core import _count_numba
 
@@ -58,7 +57,6 @@ class TestNumbaBackend:
 
 
 class TestNumbaDtypePaths:
-
     @pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
     def test_fixed_bin_dtypes_full_range(self, dtype):
         from classcounter.core import _count_numba

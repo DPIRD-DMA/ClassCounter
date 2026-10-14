@@ -9,7 +9,6 @@ from classcounter import count_classes
 
 
 class TestPercent:
-
     def test_percent_basic(self):
         arr = np.array([0, 0, 1, 1, 1], dtype=np.int32)
         result = count_classes(arr, percent=True)

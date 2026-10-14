@@ -17,7 +17,6 @@ def torch_module():
 
 
 class TestTorchBackend:
-
     def test_tensor_input_auto_detects_torch(self, torch_module, simple_array):
         from classcounter import count_classes
 
