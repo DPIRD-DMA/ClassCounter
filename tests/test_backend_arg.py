@@ -75,17 +75,16 @@ class TestBackendArgTensors:
 
 _CACHE_PROBE = """
 import numpy as np
+from numba.core.registry import CPUDispatcher
+
 from classcounter import _numba as kernels
 from classcounter import count_classes
 
-count_classes(np.zeros(1000, dtype=np.uint8), backend="numba")
-count_classes(np.array([3, 1, 2], dtype=np.int32), backend="numba")
-count_classes(np.zeros(1000, dtype=np.uint8), backend="numba", mask=np.ones(1000, dtype=bool))
-used = [
-    kernels._bincount_kernel,
-    kernels._minmax_kernel,
-    kernels._bincount_masked_kernel,
-]
+for n in (1000, 3_000_000):  # below and above the serial-kernel threshold
+    count_classes(np.zeros(n, dtype=np.uint8), backend="numba")
+    count_classes(np.ones(n, dtype=np.int32), backend="numba")
+    count_classes(np.zeros(n, dtype=np.uint8), backend="numba", mask=np.ones(n, dtype=bool))
+used = [k for k in vars(kernels).values() if isinstance(k, CPUDispatcher)]
 print(sum(sum(k.stats.cache_hits.values()) for k in used),
       sum(sum(k.stats.cache_misses.values()) for k in used))
 """

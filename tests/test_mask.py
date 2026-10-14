@@ -44,6 +44,20 @@ def _backends():
         from classcounter.core import _count_numba
 
         backends.append(("numba", _count_numba))
+
+        def numba_parallel(data, mask):
+            # Test arrays are small enough to take the single-threaded
+            # kernels; force the parallel ones too.
+            import classcounter._numba as kernels
+
+            saved = kernels._SERIAL_MAX_ELEMENTS
+            kernels._SERIAL_MAX_ELEMENTS = -1
+            try:
+                return _count_numba(data, mask)
+            finally:
+                kernels._SERIAL_MAX_ELEMENTS = saved
+
+        backends.append(("numba-parallel", numba_parallel))
     if HAS_TORCH:
         import torch
 
@@ -238,8 +252,12 @@ class TestMaskSparseAndLayout:
 
 @pytest.mark.skipif(not HAS_NUMBA, reason="numba not installed")
 @pytest.mark.parametrize("threads", [1, 3])
-def test_numba_respects_set_num_threads(threads):
+def test_numba_respects_set_num_threads(threads, monkeypatch):
     import numba
+
+    import classcounter._numba as kernels
+
+    monkeypatch.setattr(kernels, "_SERIAL_MAX_ELEMENTS", -1)
 
     from classcounter.core import _count_numba
 

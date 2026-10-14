@@ -9,6 +9,14 @@ from numpy.typing import NDArray
 # global, which stops numba from writing the kernel to its on-disk cache.
 # The public wrappers below read the thread count at call time, so
 # ``numba.set_num_threads()`` is still respected.
+#
+# Below _SERIAL_MAX_ELEMENTS the wrappers use single-threaded kernels
+# instead. A parallel call returns only once every pool thread has run, so
+# on a busy machine each call waits ~20 ms for threads to get a CPU, far
+# longer than counting a small array takes on one thread (~0.4 ms per 1M
+# elements). The parallel and serial kernels must be separate functions:
+# compiling one function twice makes both share a single on-disk cache entry.
+_SERIAL_MAX_ELEMENTS = 1 << 21
 
 
 @numba.njit(parallel=True, cache=True)
@@ -179,8 +187,64 @@ def _minmax_masked_kernel(
     return mn, mx, any_found
 
 
+@numba.njit(cache=True)
+def _bincount_serial(flat: NDArray[np.integer], num_bins: int) -> NDArray[np.int64]:
+    counts = np.zeros(num_bins, dtype=np.int64)
+    for i in range(flat.size):
+        counts[flat[i]] += 1
+    return counts
+
+
+@numba.njit(cache=True)
+def _bincount_masked_serial(
+    flat: NDArray[np.integer], mask: NDArray[np.bool_], num_bins: int
+) -> NDArray[np.int64]:
+    counts = np.zeros(num_bins, dtype=np.int64)
+    for i in range(flat.size):
+        if mask[i]:
+            counts[flat[i]] += 1
+    return counts
+
+
+@numba.njit(cache=True)
+def _minmax_serial(flat: NDArray[np.integer]) -> tuple[int, int]:
+    mn = flat[0]
+    mx = flat[0]
+    for i in range(1, flat.size):
+        v = flat[i]
+        if v < mn:
+            mn = v
+        elif v > mx:
+            mx = v
+    return mn, mx
+
+
+@numba.njit(cache=True)
+def _minmax_masked_serial(
+    flat: NDArray[np.integer], mask: NDArray[np.bool_]
+) -> tuple[int, int, bool]:
+    found = False
+    mn = flat[0]
+    mx = flat[0]
+    for i in range(flat.size):
+        if not mask[i]:
+            continue
+        v = flat[i]
+        if not found:
+            mn = v
+            mx = v
+            found = True
+        elif v < mn:
+            mn = v
+        elif v > mx:
+            mx = v
+    return mn, mx, found
+
+
 def bincount_numba(flat: NDArray[np.integer], num_bins: int) -> NDArray[np.int64]:
     """Count occurrences of each value in a flat non-negative integer array."""
+    if flat.size <= _SERIAL_MAX_ELEMENTS:
+        return _bincount_serial(flat, num_bins)
     return _bincount_kernel(flat, num_bins, numba.get_num_threads())
 
 
@@ -192,6 +256,8 @@ def bincount_masked_numba(
     Values at masked-out positions are never used as bin indices, so they may
     be negative or exceed *num_bins*.
     """
+    if flat.size <= _SERIAL_MAX_ELEMENTS:
+        return _bincount_masked_serial(flat, mask, num_bins)
     return _bincount_masked_kernel(flat, mask, num_bins, numba.get_num_threads())
 
 
@@ -217,6 +283,8 @@ def minmax_numba(flat: NDArray[np.integer]) -> tuple[int, int]:
     two full memory-bandwidth-bound scans over the data. Precondition:
     flat.size > 0.
     """
+    if flat.size <= _SERIAL_MAX_ELEMENTS:
+        return _minmax_serial(flat)
     return _minmax_kernel(flat, numba.get_num_threads())
 
 
@@ -228,4 +296,6 @@ def minmax_masked_numba(
     When no element is selected, ``found`` is False and min/max are
     meaningless. Precondition: flat.size > 0.
     """
+    if flat.size <= _SERIAL_MAX_ELEMENTS:
+        return _minmax_masked_serial(flat, mask)
     return _minmax_masked_kernel(flat, mask, numba.get_num_threads())

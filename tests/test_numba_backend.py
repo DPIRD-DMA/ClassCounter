@@ -10,6 +10,16 @@ from tests.conftest import skip_no_numba
 pytestmark = [pytest.mark.numba, skip_no_numba]
 
 
+@pytest.fixture(autouse=True, params=["serial", "parallel"])
+def kernel_mode(request, monkeypatch):
+    """Run every test with both the single-threaded and parallel kernels."""
+    import classcounter._numba as kernels
+
+    limit = 2**62 if request.param == "serial" else -1
+    monkeypatch.setattr(kernels, "_SERIAL_MAX_ELEMENTS", limit)
+    return request.param
+
+
 class TestNumbaBackend:
 
     def test_basic_count(self, simple_array):
