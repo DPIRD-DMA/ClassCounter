@@ -14,9 +14,12 @@ from numpy.typing import NDArray
 # instead. A parallel call returns only once every pool thread has run, so
 # on a busy machine each call waits ~20 ms for threads to get a CPU, far
 # longer than counting a small array takes on one thread (~0.4 ms per 1M
-# elements). The parallel and serial kernels must be separate functions:
-# compiling one function twice makes both share a single on-disk cache entry.
-_SERIAL_MAX_ELEMENTS = 1 << 21
+# uint8 elements). On a quiet machine the parallel kernels are faster at
+# every size, so the threshold caps that cost: at 1M elements a single thread
+# was ~0.3 ms (uint8) to ~1 ms (int32) slower on a quiet 16-core node.
+# The parallel and serial kernels must be separate functions: compiling one
+# function twice makes both share a single on-disk cache entry.
+_SERIAL_MAX_ELEMENTS = 1 << 20
 
 
 @numba.njit(parallel=True, cache=True)

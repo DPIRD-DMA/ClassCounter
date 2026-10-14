@@ -12,11 +12,15 @@ _torch_module: Any = None
 _torch_checked = False
 _has_numba_cached: bool | None = None
 
-# Unsigned dtypes whose entire value range fits in a small bin array — we can
-# skip the `flat.max()` pass and pre-allocate `dtype.max + 1` bins instead.
-_FIXED_BIN_DTYPES: dict[Any, int] = {
-    np.dtype(np.uint8): 256,
-    np.dtype(np.uint16): 65536,
+# Unsigned dtypes whose whole value range fits in a bin array, mapped to
+# (bins, minimum array size). Pre-allocating ``dtype.max + 1`` bins skips the
+# `flat.max()` pass, but allocating, merging and scanning every bin costs
+# more than that pass until the array is much larger than the bin count. On a
+# quiet 16-core node, 65536 uint16 bins were slower up to 10M elements and
+# faster from 30M.
+_FIXED_BIN_DTYPES: dict[Any, tuple[int, int]] = {
+    np.dtype(np.uint8): (256, 0),
+    np.dtype(np.uint16): (65536, 1 << 24),
 }
 
 # Upper bound for the single-pass signed-int histogram. 65536 keeps the
@@ -43,6 +47,14 @@ def _is_nonneg_int(flat: NDArray[Any]) -> bool:
     if np.issubdtype(flat.dtype, np.unsignedinteger):
         return True
     return flat.size > 0 and flat.min() >= 0
+
+
+def _fixed_bins(flat: NDArray[Any]) -> int | None:
+    """Bin count covering *flat*'s whole dtype range, if that path pays off."""
+    entry = _FIXED_BIN_DTYPES.get(flat.dtype)
+    if entry is None or flat.size < entry[1]:
+        return None
+    return entry[0]
 
 
 def _count_bool(flat: NDArray[Any], mask: NDArray[Any] | None = None) -> dict[int, int]:
@@ -356,9 +368,9 @@ def _count_numba(arr: NDArray[Any], mask: Any = None) -> dict[int, int]:
     if flat.size == 0:
         return {}
 
-    # uint8 / uint16: dtype max is small enough to allocate bins directly,
-    # so we skip the entire max() pass over the data.
-    fixed_bins = _FIXED_BIN_DTYPES.get(flat.dtype)
+    # uint8 (and large uint16): allocate bins for the whole dtype range
+    # directly, skipping the max() pass over the data.
+    fixed_bins = _fixed_bins(flat)
     if fixed_bins is not None:
         bin_counts = bincount_numba(flat, fixed_bins)
         nonzero = np.nonzero(bin_counts)[0]
@@ -401,7 +413,7 @@ def _count_numba_masked(flat: NDArray[Any], mask: NDArray[Any]) -> dict[int, int
     if flat.size == 0:
         return {}
 
-    fixed_bins = _FIXED_BIN_DTYPES.get(flat.dtype)
+    fixed_bins = _fixed_bins(flat)
     if fixed_bins is not None:
         bin_counts = bincount_masked_numba(flat, mask, fixed_bins)
     elif np.issubdtype(flat.dtype, np.integer):

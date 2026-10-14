@@ -57,13 +57,28 @@ class TestNumbaBackend:
 
 
 class TestNumbaDtypePaths:
+    @pytest.mark.parametrize("fixed_path", [True, False], ids=["fixed-bins", "max-pass"])
     @pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
-    def test_fixed_bin_dtypes_full_range(self, dtype):
-        from classcounter.core import _count_numba
+    def test_small_unsigned_full_range(self, dtype, fixed_path, monkeypatch):
+        import classcounter.core as core
 
+        bins = np.iinfo(dtype).max + 1
+        # Force each path regardless of the array-size cutoff.
+        min_size = 0 if fixed_path else 2**62
+        monkeypatch.setitem(core._FIXED_BIN_DTYPES, np.dtype(dtype), (bins, min_size))
         top = np.iinfo(dtype).max
         arr = np.array([0, 3, 3, top, top, top], dtype=dtype)
-        assert _count_numba(arr) == {0: 1, 3: 2, int(top): 3}
+        assert core._count_numba(arr) == {0: 1, 3: 2, int(top): 3}
+        mask = np.array([True, False, True, True, False, True])
+        assert core._count_numba(arr, mask) == {0: 1, 3: 1, int(top): 2}
+
+    def test_uint16_fixed_bins_only_for_large_arrays(self):
+        from classcounter.core import _fixed_bins
+
+        assert _fixed_bins(np.empty(10, dtype=np.uint8)) == 256
+        assert _fixed_bins(np.empty(10, dtype=np.uint16)) is None
+        assert _fixed_bins(np.empty(1 << 24, dtype=np.uint16)) == 65536
+        assert _fixed_bins(np.empty(10, dtype=np.int32)) is None
 
     @pytest.mark.parametrize("dtype", [np.uint32, np.uint64])
     def test_wide_unsigned_dtypes(self, dtype):
