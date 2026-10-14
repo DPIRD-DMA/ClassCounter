@@ -165,7 +165,7 @@ def count_classes(
 
     result: dict[int | str, int] | dict[int | str, float]
     if names is not None:
-        result = {name: counts.get(k, 0) for k, name in names.items()}
+        named: dict[int | str, int] = {name: counts.get(k, 0) for k, name in names.items()}
         for k, v in counts.items():
             if k not in names:
                 warnings.warn(
@@ -174,7 +174,8 @@ def count_classes(
                     UserWarning,
                     stacklevel=2,
                 )
-                result[k] = v
+                named[k] = v
+        result = named
     else:
         result = counts  # type: ignore[assignment]
 
@@ -476,7 +477,8 @@ def _load_raster(path: Path) -> np.ndarray:
         raise ImportError(msg) from None
 
     with rasterio.open(path) as src:
-        return src.read()
+        data: np.ndarray = src.read()
+    return data
 
 
 def _try_import_torch() -> Any:

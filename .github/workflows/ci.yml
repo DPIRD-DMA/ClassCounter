@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  # Dependencies are declared without upper bounds (see pyproject.toml), so a
+  # new upstream release can break the build without any commit here. The
+  # install resolves fresh on every run (uv.lock is gitignored), so this weekly
+  # job is what surfaces that before a user reports it.
+  schedule:
+    - cron: "0 18 * * 0"  # Sundays 18:00 UTC (Monday morning AWST)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Without a limit a hung job runs for GitHub's 6-hour default.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    # uv builds the venv from .python-version unless told otherwise, so without
+    # this every matrix job would silently run the same Python. It also picks
+    # the Python for the isolated install tests (uv run --script).
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history so hatch-vcs can read the version tag
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          cache-suffix: ${{ matrix.python-version }}
+
+      # CPU-only torch: CI has no GPU, and the default CUDA build pulls ~3 GB
+      # of nvidia-* wheels on every run. --torch-backend is a uv pip option, so
+      # install with the pip interface; UV_NO_SYNC stops later `uv run`s
+      # re-syncing to the CUDA build.
+      - name: Install (CPU-only torch)
+        # PyPI downloads occasionally hang on GitHub runners. Completed
+        # downloads stay in uv's cache, so short retries make progress.
+        run: |
+          uv venv
+          for attempt in 1 2 3 4 5 6 7 8; do
+            timeout 90 uv pip install --torch-backend cpu -e . --group dev && exit 0
+            echo "::warning::install attempt $attempt failed or stalled; retrying"
+          done
+          exit 1
+        timeout-minutes: 14
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test
+        run: uv run pytest tests/ -q

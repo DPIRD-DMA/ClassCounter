@@ -1,6 +1,6 @@
 [project]
 name = "classcounter"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Fast class counting for numpy arrays, torch tensors, and GeoTIFFs"
 readme = "README.md"
 license = "MIT"
@@ -43,11 +43,18 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "matplotlib>=3.10.8",
+    "mypy>=2.4.0",
+    "pre-commit>=4.6.2",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# The version comes from the latest git tag (e.g. v0.2.0), so releasing is
+# just tagging; see RELEASING.md.
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.sdist]
 exclude = [".claude/"]
@@ -58,6 +65,19 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+files = ["classcounter"]
+ignore_missing_imports = true
+strict = true
+
+# numba ships no type information, so its decorators erase signatures and
+# compiled-kernel calls return Any. The wrappers' annotations document the
+# real types.
+[[tool.mypy.overrides]]
+module = "classcounter._numba"
+disallow_untyped_decorators = false
+warn_return_any = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

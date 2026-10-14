@@ -1,5 +1,6 @@
 [![PyPI Version](https://img.shields.io/pypi/v/classcounter)](https://pypi.org/project/classcounter/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/classcounter)](https://pypi.org/project/classcounter/)
+[![CI](https://github.com/DPIRD-DMA/ClassCounter/actions/workflows/ci.yml/badge.svg)](https://github.com/DPIRD-DMA/ClassCounter/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 # ClassCounter
@@ -171,8 +172,12 @@ Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Run tests: `uv run pytest`
-4. Submit a pull request
+3. Install the git hooks: `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`
+   (ruff and mypy on commit, tests on push)
+4. Run tests: `uv run pytest`
+5. Submit a pull request
+
+See [RELEASING.md](RELEASING.md) for how releases are published.
 
 ## License
 

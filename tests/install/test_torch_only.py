@@ -4,6 +4,14 @@
 #
 # [tool.uv.sources]
 # classcounter = { path = "../.." }
+# # CPU-only torch: these tests only check the install works, and the default
+# # Linux wheel pulls ~3 GB of CUDA libraries (on every CI run).
+# torch = { index = "pytorch-cpu" }
+#
+# [[tool.uv.index]]
+# name = "pytorch-cpu"
+# url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
 # ///
 """Test that classcounter[torch] works (torch available, rasterio/numba not required)."""
 
