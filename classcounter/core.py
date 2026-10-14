@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 _torch_module: Any = None
 _torch_checked = False
@@ -32,7 +33,7 @@ _SIGNED_SINGLE_PASS_BYTES = 50 * 1024 * 1024
 _BACKENDS = ("auto", "numpy", "numba", "torch")
 
 
-def _is_nonneg_int(flat: np.ndarray) -> bool:
+def _is_nonneg_int(flat: NDArray[Any]) -> bool:
     """Check if a flat array is non-negative integer (skips min() for unsigned dtypes).
 
     Precondition: flat.size > 0.
@@ -44,7 +45,7 @@ def _is_nonneg_int(flat: np.ndarray) -> bool:
     return flat.size > 0 and flat.min() >= 0
 
 
-def _count_bool(flat: np.ndarray, mask: np.ndarray | None = None) -> dict[int, int]:
+def _count_bool(flat: NDArray[Any], mask: NDArray[Any] | None = None) -> dict[int, int]:
     """Fast path for boolean arrays using count_nonzero."""
     if mask is None:
         n_true = int(np.count_nonzero(flat))
@@ -74,12 +75,12 @@ def _has_numba() -> bool:
 
 
 def count_classes(
-    data: str | Path | np.ndarray | Any,
+    data: str | Path | NDArray[Any] | Any,
     names: dict[int, str] | None = None,
     percent: bool = False,
     save_metadata: bool = False,
     metadata_prefix: str | None = None,
-    mask: np.ndarray | Any | None = None,
+    mask: NDArray[Any] | Any | None = None,
     backend: str = "auto",
 ) -> dict[int | str, int] | dict[int | str, float]:
     """Count occurrences of each unique class value.
@@ -196,8 +197,8 @@ def count_classes(
 
 
 def _resolve_input(
-    data: str | Path | np.ndarray | Any,
-) -> tuple[np.ndarray | Any, bool]:
+    data: str | Path | NDArray[Any] | Any,
+) -> tuple[NDArray[Any] | Any, bool]:
     """Load data if needed and determine whether to use torch.
 
     Returns:
@@ -218,7 +219,7 @@ def _resolve_input(
     raise TypeError(msg)
 
 
-def _flat_mask_numpy(mask: Any, shape: tuple[int, ...]) -> np.ndarray:
+def _flat_mask_numpy(mask: Any, shape: tuple[int, ...]) -> NDArray[Any]:
     """Validate *mask* and return it as a flat bool array matching ``arr.ravel()``."""
     m = np.asarray(mask)
     if m.dtype != np.bool_:
@@ -232,7 +233,7 @@ def _flat_mask_numpy(mask: Any, shape: tuple[int, ...]) -> np.ndarray:
     return m.ravel()
 
 
-def _count_numpy(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
+def _count_numpy(arr: NDArray[Any], mask: Any = None) -> dict[int, int]:
     """Count unique values using numpy.bincount."""
     flat = arr.ravel()
     if mask is not None:
@@ -333,7 +334,7 @@ def _torch_unsigned_dtypes(torch_module: Any) -> tuple[Any, ...]:
     return _torch_unsigned_dtypes_cache
 
 
-def _count_numba(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
+def _count_numba(arr: NDArray[Any], mask: Any = None) -> dict[int, int]:
     """Count unique values using a numba-jitted loop."""
     try:
         from classcounter._numba import (
@@ -391,7 +392,7 @@ def _count_numba(arr: np.ndarray, mask: Any = None) -> dict[int, int]:
     return dict(zip(values.tolist(), counts.tolist(), strict=True))
 
 
-def _count_numba_masked(flat: np.ndarray, mask: np.ndarray) -> dict[int, int]:
+def _count_numba_masked(flat: NDArray[Any], mask: NDArray[Any]) -> dict[int, int]:
     """Masked variant of :func:`_count_numba`; skips excluded elements in-kernel."""
     from classcounter._numba import bincount_masked_numba, minmax_masked_numba
 
@@ -466,7 +467,7 @@ def save_counts_to_raster(
         dst.update_tags(**merged)
 
 
-def _load_raster(path: Path) -> np.ndarray:
+def _load_raster(path: Path) -> NDArray[Any]:
     """Load a raster file into a numpy array via rasterio."""
     try:
         import rasterio
@@ -477,7 +478,7 @@ def _load_raster(path: Path) -> np.ndarray:
         raise ImportError(msg) from None
 
     with rasterio.open(path) as src:
-        data: np.ndarray = src.read()
+        data: NDArray[Any] = src.read()
     return data
 
 
