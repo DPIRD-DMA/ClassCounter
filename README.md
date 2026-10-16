@@ -151,16 +151,18 @@ Writes each entry as a GDAL metadata tag (e.g. `CLASS_COUNT_0=1234`). Existing t
 
 Benchmarks on a Ryzen 9 5950X with RTX 4090, 100M-element uint8 arrays:
 
-| Backend                     | Time (ms) |
-|-----------------------------|-----------|
-| NumPy (CPU)                 | 178       |
-| Numba (CPU, multithreaded)  | 17        |
-| PyTorch CPU                 | 38        |
-| PyTorch GPU (CUDA)          | 2         |
+| Backend             | Time (ms) |
+|---------------------|-----------|
+| NumPy (CPU)         | 174       |
+| Numba (CPU)         | 2.8       |
+| PyTorch CPU         | 34        |
+| PyTorch GPU (CUDA)  | 1.5       |
 
 The Numba backend runs on the CPU only. For GPU counting, pass a CUDA tensor to use the PyTorch backend.
 
 ![Backend comparison](https://raw.githubusercontent.com/DPIRD-DMA/ClassCounter/main/images/Backend%20comparison.png)
+
+The step in the Numba line at about 1M elements is deliberate. Below 1M elements Numba counts on a single thread: on an idle machine that is slightly slower than using every core, but on a busy one a multithreaded call can stall for 20–100 ms waiting for its threads to get CPU time, while a single thread finishes in under a millisecond.
 
 Run the included [benchmark notebook](https://github.com/DPIRD-DMA/ClassCounter/blob/main/benchmark_backends.ipynb) to compare backends on your hardware.
 
