@@ -57,8 +57,19 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+# Packagers such as conda-forge build from the sdist and run its tests, so it
+# keeps the package, tests/, LICENSE, README and CHANGELOG but not dev-only files.
 [tool.hatch.build.targets.sdist]
-exclude = [".claude/"]
+exclude = [
+    ".claude/",
+    ".github/",
+    ".pre-commit-config.yaml",
+    "RELEASING.md",
+    "Examples.ipynb",
+    "benchmark_backends.ipynb",
+    "benchmarks/",
+    "images/",
+]
 
 [tool.ruff]
 line-length = 100
@@ -89,7 +100,9 @@ markers = [
     "slow: tests with large arrays or long runtime",
     "install: isolated install tests (slow, uses uv run --script)",
 ]
-addopts = "-v --strict-markers --tb=short"
+# The install tests need network access (uv run --script), so they're
+# deselected by default for offline builds; run them with `pytest -m install`.
+addopts = '-v --strict-markers --tb=short -m "not install"'
 
 [tool.coverage.run]
 source = ["classcounter"]

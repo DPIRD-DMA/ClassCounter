@@ -3,6 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+# tests/install/ holds standalone scripts that test_install.py runs in isolated
+# environments with `uv run --script`. Collecting them here would run them in
+# this environment, where their imports (torch, rasterio, ...) may be missing.
+collect_ignore = ["install"]
+
 # ---------------------------------------------------------------------------
 # Skip helpers for optional dependencies
 # ---------------------------------------------------------------------------

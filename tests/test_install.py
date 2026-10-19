@@ -4,13 +4,10 @@ Each script declares its own inline dependencies and gets an isolated
 environment, so we can verify that partial installs (e.g. ``classcounter[geo]``)
 work correctly without the other optional extras.
 
-Run only these tests::
+They need network access and are slow, so the default ``addopts`` deselect
+them. Run only these tests::
 
     uv run pytest -m install
-
-Skip them (they're slower due to env creation)::
-
-    uv run pytest -m "not install"
 """
 
 from __future__ import annotations

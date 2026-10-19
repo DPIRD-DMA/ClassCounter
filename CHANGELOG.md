@@ -2,6 +2,16 @@
 
 All notable changes to ClassCounter are documented in this file.
 
+## [0.2.1] - 2026-10-19
+
+### Changed
+- The sdist leaves out notebooks, benchmarks, images, CI config and other
+  dev-only files (200 KB to 28 KB); it still includes the package,
+  tests, LICENSE, README and CHANGELOG
+- A plain `pytest` run no longer runs the isolated install tests, which need
+  network access, so the suite works offline (e.g. conda-forge builds). Run
+  them with `pytest -m install`
+
 ## [0.2.0] - 2026-10-19
 
 ### Added

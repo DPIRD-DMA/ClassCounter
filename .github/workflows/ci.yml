@@ -65,3 +65,7 @@ jobs:
 
       - name: Test
         run: uv run pytest tests/ -q
+
+      # Deselected by default (they need network access); see pyproject.toml.
+      - name: Install tests
+        run: uv run pytest tests/ -q -m install

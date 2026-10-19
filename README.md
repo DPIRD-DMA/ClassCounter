@@ -176,7 +176,7 @@ Contributions are welcome! Please:
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Install the git hooks: `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`
    (ruff and mypy on commit, tests on push)
-4. Run tests: `uv run pytest`
+4. Run tests: `uv run pytest` (add `-m install` for the slower isolated-install tests, which need network access)
 5. Submit a pull request
 
 See [RELEASING.md](RELEASING.md) for how releases are published.
